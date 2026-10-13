@@ -94,6 +94,38 @@ def summary_row(table, oof, thr):
     return row
 
 
+def blend_runs(runs, weights=None):
+    """Average the stacked predictions of several scored models (soft voting).
+    runs: name -> (table, oof, threshold) on the same rows; weights default to equal.
+    Returns the same (table, oof, threshold) format, with its own threshold."""
+    names = list(runs)
+    weights = np.full(len(names), 1 / len(names)) if weights is None else np.asarray(weights) / np.sum(weights)
+    first_table, first_oof, _ = runs[names[0]]
+    for name in names[1:]:
+        assert (runs[name][1]["customer_id"].to_numpy() == first_oof["customer_id"].to_numpy()).all(), \
+            "Blended models must be scored on the same rows in the same order"
+
+    oof = first_oof[["fold", "y", "customer_id"]].copy()
+    oof["p"] = sum(w * runs[n][1]["p"].to_numpy() for w, n in zip(weights, names))
+    thr, _, _ = best_threshold(oof["y"], oof["p"])
+
+    rows = []
+    for year, part in oof.groupby("fold", sort=False):
+        ll = log_loss(part["y"], part["p"])
+        ll_floor = first_table.loc[year, "ll_floor"]
+        rows.append({
+            "fold": year,
+            "n_features": sum(runs[n][0].loc[year, "n_features"] for n in names),  # every model's columns count
+            "log_loss": ll, "ll_floor": ll_floor, "ll_gain": ll_floor - ll,
+            "roc_auc": roc_auc_score(part["y"], part["p"]),
+            "f1": f1_score(part["y"], part["p"] >= thr),
+            "floor": f1_floor(part["y"]),
+        })
+    table = pd.DataFrame(rows).set_index("fold")
+    table["lift"] = table["f1"] - table["floor"]
+    return table, oof, thr
+
+
 # ---------------------------------------------------------------------------
 # Decision rule
 # ---------------------------------------------------------------------------
