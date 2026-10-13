@@ -23,7 +23,9 @@ class DecisionLog:
 
     def record(self, step, column, action, reason, rows_train, rows_test, carries=None):
         if not reason.strip():
-            raise ValueError("every decision needs a reason")  
+            raise ValueError("every decision needs a reason")  # forces justification
+        # Re-running a cell replaces its earlier entry instead of adding a duplicate
+        self.items = [d for d in self.items if not (d.step == step and d.column == column)]
         self.items.append(
             Decision(step, column, action, reason,
                      int(rows_train), int(rows_test), carries or {})

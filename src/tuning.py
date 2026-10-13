@@ -74,12 +74,25 @@ def evaluate_cached(cache, model):
 
 
 def tune(get_cache, make_model, suggest, objective="log_loss", n_trials=60, seed=RANDOM_STATE, name=None,
-         show_progress_bar=True):
+         show_progress_bar=True, storage=None, fresh=False):
     """Run an Optuna search steered by `objective` ("log_loss" or "f1").
     Every trial records both metrics, plus ROC-AUC, threshold, training log-loss and columns used.
-    show_progress_bar: tqdm bar with the best value so far (needs ipywidgets in a notebook)."""
+
+    show_progress_bar: tqdm bar with the best value so far (needs ipywidgets in a notebook).
+    storage: e.g. "sqlite:///path/studies.db". Finished trials are saved there; a rerun with the same
+        name reloads them and only runs what is missing to reach n_trials.
+    fresh: delete a stored study with this name first. Use it, or a new name, whenever the
+        search itself changes (ranges, settings, data), so old trials are not reused by mistake.
+    """
     if objective not in OBJECTIVES:
         raise ValueError(f"objective must be one of {list(OBJECTIVES)}, got {objective!r}")
+    if storage is not None and name is None:
+        raise ValueError("A stored study needs a name, e.g. 'logistic_log_loss'")
+    if storage is not None and fresh:
+        try:
+            optuna.delete_study(study_name=name, storage=storage)
+        except KeyError:
+            pass  # nothing stored under this name yet
 
     def run(trial):
         params = suggest(trial)
@@ -99,10 +112,25 @@ def tune(get_cache, make_model, suggest, objective="log_loss", n_trials=60, seed
         direction=OBJECTIVES[objective],
         sampler=optuna.samplers.TPESampler(seed=seed),  # same seed -> same trials on a rerun
         study_name=name or objective,
+        storage=storage,
+        load_if_exists=storage is not None,
     )
+    if study.direction.name.lower() != OBJECTIVES[objective]:
+        raise ValueError(f"Stored study {name!r} was steered the other way; use a new name or fresh=True")
     study.set_user_attr("objective", objective)  # lets the helpers below sort by the steering metric
-    study.optimize(run, n_trials=n_trials, show_progress_bar=show_progress_bar)
+
+    done = sum(t.state == optuna.trial.TrialState.COMPLETE for t in study.trials)
+    if done < n_trials:
+        study.optimize(run, n_trials=n_trials - done, show_progress_bar=show_progress_bar)
     return study
+
+
+def chosen_params(chosen, studies, separator="_trial_"):
+    """Settings behind a chosen name like 'f1_trial_32'; empty for 'base' (the untuned pipeline)."""
+    if chosen == "base":
+        return {}
+    search, number = chosen.rsplit(separator, 1)
+    return dict(studies[search].trials[int(number)].params)
 
 
 def trials_table(study):

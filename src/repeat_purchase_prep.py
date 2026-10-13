@@ -290,10 +290,11 @@ def pipeline_inputs(roles, branch):
     return r["num"] + r["high"] + r["low"]
 
 
-def build_linear_pipeline(model, roles, enet_c=ENET_C, log1p_cols=None):
+def build_linear_pipeline(model, roles, enet_c=ENET_C, log1p_cols=None, enet_l1_ratio=0.5):
     """Median fill + standard scaling, frequency and one-hot encoding,
     elastic-net selection, then any linear or distance-based model (D19-D30).
-    log1p_cols: optional skewed columns to log-transform before the fill (off by default, D21)."""
+    log1p_cols: optional skewed columns to log-transform before the fill (off by default, D21).
+    enet_c, enet_l1_ratio: strength and lasso/ridge mix of the selection (0.1 and 0.5 by default)."""
     r = _linear_roles(roles)
     num_steps = [
         ("impute", SimpleImputer(strategy="median")),
@@ -310,7 +311,7 @@ def build_linear_pipeline(model, roles, enet_c=ENET_C, log1p_cols=None):
         ("onehot", OneHotEncoder(handle_unknown="infrequent_if_exist", min_frequency=RARE_MIN_ROWS), r["low"]),
     ], sparse_threshold=0)  # always a dense matrix
     selector = SelectFromModel(LogisticRegression(
-        l1_ratio=0.5, solver="saga", C=enet_c, max_iter=5000, random_state=RANDOM_STATE,
+        l1_ratio=enet_l1_ratio, solver="saga", C=enet_c, max_iter=5000, random_state=RANDOM_STATE,
     ))
     return Pipeline([
         ("prep", prep),

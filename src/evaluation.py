@@ -192,3 +192,25 @@ def judge(runs, reference, tie_rule=False):
             "roc_auc": table["roc_auc"].mean(), "verdict": verdict,
         })
     return pd.DataFrame(rows).set_index("option")
+
+
+def choose_winner(runs, reference="base"):
+    """Rule used for tuned candidates:
+    1. every candidate against the reference; none clearly better -> the reference stays;
+    2. the clear winners against the best of them; among those not clearly worse,
+       the fewest columns wins, then the best F1.
+    Returns (chosen name, table against the reference, table among the winners or None)."""
+    table = judge(runs, reference)
+    better = table.index[table["verdict"] == "better"].tolist()
+    if not better:
+        return reference, table, None
+
+    best = table.loc[better, "f1_stacked"].idxmax()
+    table_better = judge({name: runs[name] for name in better}, best, tie_rule=True)
+    equally_good = table_better.index[
+        table_better["verdict"].isin(["reference", "tie, fewer columns", "no clear difference"])
+    ]
+    chosen = (table_better.loc[equally_good]
+              .sort_values(["n_features", "f1_stacked"], ascending=[True, False])
+              .index[0])
+    return chosen, table, table_better
