@@ -226,6 +226,34 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
         return np.array([f"{c}_freq" for c in self.columns_])
 
 
+class Log1pColumns(BaseEstimator, TransformerMixin):
+    """Apply log1p to the named columns and leave the rest untouched."""
+
+    def __init__(self, columns=None):
+        self.columns = columns
+
+    def fit(self, X, y=None):
+        self.columns_in_ = list(X.columns)
+        return self
+
+    def transform(self, X):
+        X = pd.DataFrame(X, columns=self.columns_in_).copy()
+        cols = [c for c in (self.columns or []) if c in X.columns]
+        X[cols] = np.log1p(X[cols].clip(lower=0))  # clip guards against a stray negative in new data
+        return X
+
+    def get_feature_names_out(self, input_features=None):
+        return np.array(self.columns_in_)
+
+
+def skewed_columns(df, num, threshold=1.0):
+    """Non-negative numeric columns with skewness above threshold (no target involved, as in 5.4)."""
+    skip = set(NOISE + ["customer_since_year"])
+    candidates = [c for c in num if c not in skip and df[c].min() >= 0]
+    skew = df[candidates].skew()
+    return skew[skew > threshold].index.tolist()
+
+
 def column_roles(df):
     """Numeric, large categorical and small categorical inputs, before branch-specific changes."""
     excluded = set(KEYS + [TARGET] + FREE_TEXT + NOISE + HISTORY_MARKERS)
@@ -262,15 +290,19 @@ def pipeline_inputs(roles, branch):
     return r["num"] + r["high"] + r["low"]
 
 
-def build_linear_pipeline(model, roles, enet_c=ENET_C):
+def build_linear_pipeline(model, roles, enet_c=ENET_C, log1p_cols=None):
     """Median fill + standard scaling, frequency and one-hot encoding,
-    elastic-net selection, then any linear or distance-based model (D19-D30)."""
+    elastic-net selection, then any linear or distance-based model (D19-D30).
+    log1p_cols: optional skewed columns to log-transform before the fill (off by default, D21)."""
     r = _linear_roles(roles)
+    num_steps = [
+        ("impute", SimpleImputer(strategy="median")),
+        ("scale", StandardScaler()),
+    ]
+    if log1p_cols:
+        num_steps.insert(0, ("log", Log1pColumns(log1p_cols)))
     prep = ColumnTransformer([
-        ("num", Pipeline([
-            ("impute", SimpleImputer(strategy="median")),
-            ("scale", StandardScaler()),
-        ]), r["num"]),
+        ("num", Pipeline(num_steps), r["num"]),
         ("high", Pipeline([
             ("encode", FrequencyEncoder()),
             ("scale", StandardScaler()),
