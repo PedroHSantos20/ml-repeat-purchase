@@ -23,7 +23,7 @@ dependencies = [
     "joblib==1.6.0",
     "jupyter-client==8.10.0",
     "jupyter-core==5.9.1",
-    "kaleido>=1.5.1",
+    "kaleido>=1.0",
     "kiwisolver==1.5.1",
     "matplotlib==3.11.2",
     "matplotlib-inline==0.2.2",

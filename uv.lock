@@ -887,7 +887,7 @@ requires-dist = [
     { name = "joblib", specifier = "==1.6.0" },
     { name = "jupyter-client", specifier = "==8.10.0" },
     { name = "jupyter-core", specifier = "==5.9.1" },
-    { name = "kaleido", specifier = ">=1.5.1" },
+    { name = "kaleido", specifier = ">=1.0" },
     { name = "kiwisolver", specifier = "==1.5.1" },
     { name = "matplotlib", specifier = "==3.11.2" },
     { name = "matplotlib-inline", specifier = "==0.2.2" },
